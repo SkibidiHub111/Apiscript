@@ -17,15 +17,19 @@ def init_db():
         hwid TEXT,
         months INTEGER NOT NULL,
         created_at TEXT NOT NULL,
-        expires_at TEXT NOT NULL,
-        discord_id TEXT
+        expires_at TEXT NOT NULL
     )
     ''')
     conn.commit()
+    try:
+        c.execute("ALTER TABLE keys ADD COLUMN discord_id TEXT;")
+        conn.commit()
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
     conn.close()
 
 def add_key_to_db(key, hwid, months, discord_id):
-    created = datetime.datetime.utcnow()
+    created = datetime.datetime.now(datetime.UTC)
     expires = created + datetime.timedelta(days=30 * months)
     conn = get_conn()
     c = conn.cursor()
@@ -129,7 +133,7 @@ def verify_key():
     if not row:
         return jsonify({"status": "invalid", "message": "key not found"}), 404
     key_id, saved_hwid, exp = row
-    if datetime.datetime.fromisoformat(exp) < datetime.datetime.utcnow():
+    if datetime.datetime.fromisoformat(exp) < datetime.datetime.now(datetime.UTC):
         return jsonify({"status": "expired", "message": "key expired"}), 403
     if saved_hwid == "BYPASS":
         return jsonify({"status": "ok", "message": "key valid (bypass)", "id": key_id}), 200
@@ -146,14 +150,14 @@ def verify_key():
 def cleanup_loop():
     while True:
         try:
-            now = datetime.datetime.utcnow().isoformat()
+            now = datetime.datetime.now(datetime.UTC).isoformat()
             conn = get_conn()
             c = conn.cursor()
             c.execute('DELETE FROM keys WHERE expires_at <= %s', (now,))
             conn.commit()
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            print("Cleanup error:", e)
         time.sleep(3600)
 
 if __name__ == '__main__':
